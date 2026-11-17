@@ -1,0 +1,10 @@
+openeo          # Sentinel-1 download from Copernicus Data Space
+numpy
+matplotlib
+rasterio        # read/write GeoTIFF
+geopandas       # EMS flood polygons (shapefiles)
+shapely         # geometries (download rectangle)
+scikit-image    # Otsu threshold, speckle filters
+torch           # U-Net
+requests        # Sen1Floods11 download (section on U-Net training)
+ipykernel       # Jupyter kernel in VS Code
