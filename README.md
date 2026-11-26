@@ -1,58 +1,54 @@
 # Flood mapping in Emilia-Romagna with Sentinel-1 SAR
 
-In May 2023 two waves of heavy rain flooded large parts of Emilia-Romagna, in northern Italy. In this project I map the flood around Lugo (Bassa Romagna) from Sentinel-1 radar images and compare two approaches against the official Copernicus EMS flood map:
+From raw Sentinel-1 radar images to a flood map checked against the official Copernicus EMS map, for the May 2023 flood around Lugo (Emilia-Romagna, Italy). I compare a classical threshold (Otsu) with a small U-Net trained on floods in other countries (Sen1Floods11) and applied here without retraining (zero-shot).
 
-- **Otsu thresholding**, a classical method that needs no training data;
-- a **small U-Net** written in PyTorch, trained on floods in other countries (Sen1Floods11) and applied to Italy without retraining (zero-shot).
+**Result:** against the EMS map the two reach almost the same IoU, 0.591 for Otsu and 0.588 for the U-Net, but they make different errors: the U-Net misses less water, Otsu gives fewer false alarms.
 
-All the work is in one notebook, [`FloodMappingEmiliaRomagnaS1.ipynb`](FloodMappingEmiliaRomagnaS1.ipynb). It opens with a decision log of the choices I made, including the ones that did not work.
+Everything is in one notebook, [`FloodMappingEmiliaRomagnaS1.ipynb`](FloodMappingEmiliaRomagnaS1.ipynb). It opens with a decision log of the choices I made, including the ones that did not work.
 
 ![Sentinel-1 before and after the flood, and the EMS reference map](figures/1_data_pre_post_ems.png)
 
-## Data
+## Pipeline
 
-| Data | What I used | Role |
-|---|---|---|
-| Sentinel-1 GRD | VV + VH, σ⁰ in dB, 10 m. Pre-event 28 April 2023, post-event 22 May 2023, same relative orbit (95, descending). Downloaded with openEO from the Copernicus Data Space Ecosystem | input |
-| Copernicus EMS EMSR664 | Flood polygons drawn on a COSMO-SkyMed image of 21 May 2023, rasterized on the Sentinel-1 grid | reference |
-| Sen1Floods11 | Hand-labelled Sentinel-1 chips from 11 floods around the world, official split (252 train / 89 valid / 90 test) | U-Net training and test |
-
-The study area is 29 × 32 km (11.85–12.20 °E, 44.30–44.58 °N). Pixels outside the area analysed by EMS (16%) are left out of the metrics.
-
-## Method
-
-- **Otsu (a):** one threshold on the post-event VV image. A single threshold for the whole image fails, because water covers only ~5% of it. So I compute Otsu only on the 10% most contrasted 2 × 2 km tiles, after a 5 × 5 median filter against speckle.
-- **Otsu (b), change detection:** the same procedure on the difference post − pre.
-- **U-Net:** 3 levels (16 → 128 channels, 483k weights), input VV + VH, trained on CPU. The loss is a binary cross-entropy that ignores no-data pixels and gives more weight to water (pos_weight = 3). The best epoch is chosen on the validation set.
-- **Evaluation:** IoU (main metric), precision, recall and F1, computed from the confusion matrix. The EMS map and the Sen1Floods11 test set are used only for the final scores.
+1. **Data.** Sentinel-1 GRD, VV + VH, σ⁰ in dB, 10 m, downloaded and calibrated with openEO on the Copernicus Data Space Ecosystem. Pre-event 28 April 2023, post-event 22 May 2023, same relative orbit (95, descending), so the two images can be compared pixel by pixel. Study area: 29 × 32 km (11.85–12.20 °E, 44.30–44.58 °N).
+2. **Reference.** Copernicus EMS EMSR664 flood polygons, drawn on a COSMO-SkyMed image of 21 May 2023, rasterized on the Sentinel-1 grid. Pixels outside the EMS area or without a radar value (16% in total) are left out of the scores.
+3. **Methods.**
+   - Otsu (a): one threshold on the post-event VV image. A threshold computed on the whole image fails, because water covers only ~5% of it, so Otsu runs on the 10% most contrasted 2 × 2 km tiles, after a 5 × 5 median filter against speckle.
+   - Otsu (b), change detection: the same procedure on the difference post − pre.
+   - U-Net: 3 levels (16 → 128 channels, 483k weights), input VV + VH, trained on CPU on the hand-labelled part of Sen1Floods11 (official split: 252 train / 89 valid / 90 test chips). The loss is a binary cross-entropy that ignores no-data pixels and gives more weight to water (pos_weight = 3); the best epoch is chosen on the validation set.
+4. **Evaluation.** IoU (main metric), precision, recall and F1 from the confusion matrix. The EMS map and the Sen1Floods11 test set are used only for the final scores.
 
 ![How Otsu chooses the threshold](figures/3_otsu_threshold.gif)
 
 ## Results
 
-| Method | IoU | Precision | Recall | F1 |
-|---|---|---|---|---|
-| U-Net (zero-shot) | 0.622 | 0.662 | 0.910 | 0.767 |
-| Otsu (a), post-event image | 0.598 | 0.706 | 0.796 | 0.748 |
-| Otsu (b), change detection | 0.549 | 0.667 | 0.756 | 0.709 |
+| Method | IoU | Precision | Recall | F1 | False alarms | Missed water |
+|---|---|---|---|---|---|---|
+| Otsu (a), post-event image | 0.591 | 0.700 | 0.791 | 0.743 | 139k | 86k |
+| U-Net, zero-shot | 0.588 | 0.618 | 0.925 | 0.741 | 235k | 31k |
+| Otsu (b), change detection | 0.542 | 0.660 | 0.751 | 0.703 | 159k | 102k |
 
-- The U-Net and Otsu (a) reach a similar IoU, but they make different errors. The U-Net finds more of the flooded area and pays with more false alarms along field edges, roads and canals; Otsu misses more water at field borders and leaves scattered speckle dots.
-- The gap between the two is small compared with the uncertainty of the reference. Sentinel-1 and EMS are offset by about one pixel (10 m): shifting the Otsu map by one pixel would raise its IoU from 0.598 to 0.615. I measured the shift but did not correct it, because in a real emergency there is no reference map to align to.
-- Change detection does worse than the single post-event image. It removes permanent water, but that lies mostly outside the evaluated area, and it adds the speckle of two images and fields that changed for other reasons.
-- On the Sen1Floods11 test set the U-Net reaches IoU 0.67. The paper reports the mean IoU per chip: 0.31 for its network trained on the same hand labels, 0.41 for its best network and 0.36 for Otsu on VH; my U-Net gets 0.41 with this metric, with a different training setup.
+*False alarms and missed water are counted in pixels of 10 × 10 m; the reference has 411k water pixels.*
+
+- **Same overlap, different errors.** The U-Net finds more of the flooded area and pays with false alarms along field borders, roads and canals; Otsu misses more water at field borders and leaves scattered speckle dots. Which one is better depends on what costs more: a missed flooded field or a false alarm.
+- **The difference is within the uncertainty of the reference.** Sentinel-1 and EMS are offset by about one pixel: shifting the Otsu map by one pixel would raise its IoU from 0.591 to 0.608. I measured the shift but did not correct it, because in an emergency there is no reference map to align to.
+- **Change detection does worse** than the post-event image alone: it removes permanent water, which lies mostly outside the evaluated area, and adds the speckle of two images.
+- **On Sen1Floods11** the U-Net reaches IoU 0.652 on the test set. The paper reports the mean IoU per chip: 0.31 for its network trained on the same hand labels and 0.41 for its best one; my U-Net gets 0.40 with this metric, with a different training setup.
+- **Small model:** a 2 MB file; the whole 29 × 32 km image takes about 8 s on a laptop CPU.
 
 ![Error maps of Otsu and the U-Net against Copernicus EMS](figures/2_error_maps_otsu_unet.png)
 
-*Blue: water for both the method and EMS. Red: false alarm. Orange: missed water. Grey: not evaluated.*
+*Blue: water for both the method and EMS. Red: false alarm. Orange: missed water. Grey: not evaluated (outside the EMS area, or no radar value: the grey dots inside the water).*
 
 ## Limitations
 
-- Sentinel-1 passed on 22 May, five days after the peak of the flood and 12 hours after the image used by EMS, so some water had already drained.
-- The reference is not perfect: the EMS polygons come from another sensor and are offset by about one pixel.
+- Sentinel-1 passed on 22 May, five days after the peak and 12 hours after the image used by EMS, so some water had already drained.
 - In towns, buildings and water give a bright double-bounce signal, so flooded streets are missed by both methods. Water under crops and wet bare soil also cause errors.
+- Otsu always returns a threshold, even on an image without flood water: a chain that runs on its own would first check that the histogram has two clear peaks.
+- 0.7% of the pixels have no radar value, mostly calm water where VH is too weak to be measured; they are left out of the scores.
 - One event in a flat agricultural area, and one training run with a single seed and no data augmentation.
 
-Possible next steps: data augmentation and fine-tuning on EMS maps of other events, interferometric coherence for urban areas, terrain information (HAND) to remove impossible water, and a comparison with larger datasets and tools such as Kuro Siwo and ml4floods.
+Next steps: more EMS events to test and fine-tune the U-Net, the U-Net probability as a confidence map instead of a fixed threshold, interferometric coherence for towns, and terrain information (HAND) to remove impossible water.
 
 ## How to run
 
@@ -62,11 +58,11 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Then run the notebook from top to bottom (Python 3.12, tested on Windows with CPU only). You need a free Copernicus Data Space Ecosystem account for the openEO downloads, and the EMS vector package EMSR664 AOI01 DEL MONIT03 from the [Copernicus EMS Rapid Mapping](https://mapping.emergency.copernicus.eu/) page, unzipped into `data/`. Sentinel-1, Sentinel-2 and Sen1Floods11 (~780 MB) are downloaded by the notebook. Training takes about one hour per run on a 6-thread CPU. `data/` and `models/` are not in the repository.
+Then run the notebook from top to bottom (Python 3.12, tested on Windows with CPU only). You need a free Copernicus Data Space Ecosystem account for the openEO downloads, and the EMS vector package EMSR664 AOI01 DEL MONIT03 from the [Copernicus EMS Rapid Mapping](https://mapping.emergency.copernicus.eu/) page, unzipped into `data/`. Sentinel-1, Sentinel-2 and Sen1Floods11 (~780 MB) are downloaded by the notebook. The trained weights are in `models/` (2 MB each), so the notebook loads them instead of training; delete them to train again (about 45 minutes per run on a 6-thread CPU). `data/` is not in the repository.
 
 ## How this project was built
 
-I chose the case study, the data and the methods, and I ran and checked every step. The code and the text were written with the help of Claude Code, an AI coding assistant, one notebook cell at a time; I reviewed each cell and its output before moving on. The decision log at the top of the notebook records why each choice was made.
+I chose the case study, the data and the methods, and I ran and checked every step. The code and the text were written with the help of Claude Code, an AI coding assistant, one notebook cell at a time; I reviewed each cell and its output before moving on.
 
 ## References
 

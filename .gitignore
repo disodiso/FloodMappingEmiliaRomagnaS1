@@ -1,5 +1,5 @@
 data/
-models/
+models/v1/
 .venv/
 .ipynb_checkpoints/
 __pycache__/
