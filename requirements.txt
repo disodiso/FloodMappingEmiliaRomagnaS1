@@ -1,10 +1,12 @@
-openeo          # Sentinel-1 download from Copernicus Data Space
-numpy
-matplotlib
-rasterio        # read/write GeoTIFF
-geopandas       # EMS flood polygons (shapefiles)
-shapely         # geometries (download rectangle)
-scikit-image    # Otsu threshold, speckle filters
-torch           # U-Net
-requests        # Sen1Floods11 download (section on U-Net training)
-ipykernel       # Jupyter kernel in VS Code
+openeo==0.54.0          # Sentinel-1/2 download from the Copernicus Data Space Ecosystem
+numpy==2.5.4
+pandas==2.3.3           # results tables
+matplotlib==3.11.2
+rasterio==1.5.2         # read/write GeoTIFF
+geopandas==1.2.0        # EMS flood polygons (shapefiles)
+shapely==2.2.0          # geometries (download rectangle)
+scipy==1.18.1           # median filter against speckle
+scikit-image==0.26.0    # Otsu threshold
+torch==2.15.0           # U-Net
+requests==2.34.2        # Sen1Floods11 and map downloads
+ipykernel==7.4.0        # Jupyter kernel in VS Code
